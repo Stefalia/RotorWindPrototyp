@@ -1,0 +1,102 @@
+services:
+  zookeeper:
+    build: ./zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - kafka-net
+
+  kafka:
+    build: ./kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - kafka-net
+
+  producer:
+    build: ./producer
+    depends_on:
+      - kafka
+    networks:
+      - kafka-net
+
+  influxdb:
+    build: ./influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-storage:/var/lib/influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: "setup"
+      DOCKER_INFLUXDB_INIT_USERNAME: "admin"
+      DOCKER_INFLUXDB_INIT_PASSWORD: "admin123"
+      DOCKER_INFLUXDB_INIT_ORG: "MitschiSoft"
+      DOCKER_INFLUXDB_INIT_BUCKET: "RotorData"
+      DOCKER_INFLUXDB_INIT_RETENTION: "1w"
+    networks:
+      - kafka-net
+
+  telegraf:
+    build: ./telegraf
+    depends_on:
+      - kafka
+      - influxdb
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - kafka-net
+
+  grafana:
+    build: ./grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - influxdb
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    networks:
+      - kafka-net
+
+  flink-jobmanager:
+    build: ./flink
+    ports:
+      - "8081:8081"
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+    command: jobmanager
+    networks:
+      - kafka-net
+
+  flink-taskmanager:
+    build: ./flink
+    depends_on:
+      - flink-jobmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+    command: taskmanager
+    networks:
+      - kafka-net
+
+  splunk:
+    build: ./splunk
+    ports:
+      - "8000:8000"
+    networks:
+      - kafka-net
+
+volumes:
+  influxdb-storage:
+  grafana-storage:
+
+networks:
+  kafka-net:
